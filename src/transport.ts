@@ -7,33 +7,35 @@
  */
 
 import * as lambda from "@aws-cdk/aws-lambda";
+import log from "loglevel";
 
-export const apiKeyEnvVar = "DD_API_KEY";
-export const apiKeyKMSEnvVar = "DD_KMS_API_KEY";
-export const siteURLEnvVar = "DD_SITE";
-export const logForwardingEnvVar = "DD_FLUSH_TO_LOG";
+export const API_KEY_ENV_VAR = "DD_API_KEY";
+export const KMS_API_KEY_ENV_VAR = "DD_KMS_API_KEY";
+export const SITE_URL_ENV_VAR = "DD_SITE";
+export const FLUSH_METRICS_TO_LOGS_ENV_VAR = "DD_FLUSH_TO_LOG";
 
 export const transportDefaults = {
   site: "datadoghq.com",
   flushMetricsToLogs: true,
-  enableDDTracing: true,
+  enableDatadogTracing: true,
 };
 
 export class Transport {
   flushMetricsToLogs: boolean;
   site: string;
   apiKey?: string;
-  apiKMSKey?: string;
+  apiKmsKey?: string;
   extensionLayerVersion?: number;
 
   constructor(
     flushMetricsToLogs?: boolean,
     site?: string,
     apiKey?: string,
-    apiKMSKey?: string,
+    apiKmsKey?: string,
     extensionLayerVersion?: number,
   ) {
     if (flushMetricsToLogs === undefined) {
+      log.debug(`No value provided for flushMetricsToLogs, defaulting to ${transportDefaults.flushMetricsToLogs}`);
       this.flushMetricsToLogs = transportDefaults.flushMetricsToLogs;
     } else {
       this.flushMetricsToLogs = flushMetricsToLogs;
@@ -42,30 +44,33 @@ export class Transport {
     this.extensionLayerVersion = extensionLayerVersion;
     // If the extension is used, metrics will be submitted via the extension.
     if (this.extensionLayerVersion !== undefined) {
+      log.debug(`Using extension version ${this.extensionLayerVersion}, metrics will be submitted via the extension`);
       this.flushMetricsToLogs = false;
     }
 
     if (site === undefined) {
+      log.debug(`No value provided for site, defaulting to ${transportDefaults.site}`);
       this.site = transportDefaults.site;
     } else {
       this.site = site;
     }
 
     this.apiKey = apiKey;
-    this.apiKMSKey = apiKMSKey;
+    this.apiKmsKey = apiKmsKey;
   }
 
   applyEnvVars(lambdas: lambda.Function[]) {
+    log.debug(`Setting Datadog transport environment variables...`);
     lambdas.forEach((lam) => {
-      lam.addEnvironment(logForwardingEnvVar, this.flushMetricsToLogs.toString());
+      lam.addEnvironment(FLUSH_METRICS_TO_LOGS_ENV_VAR, this.flushMetricsToLogs.toString());
       if (this.site !== undefined && this.flushMetricsToLogs === false) {
-        lam.addEnvironment(siteURLEnvVar, this.site);
+        lam.addEnvironment(SITE_URL_ENV_VAR, this.site);
       }
       if (this.apiKey !== undefined) {
-        lam.addEnvironment(apiKeyEnvVar, this.apiKey);
+        lam.addEnvironment(API_KEY_ENV_VAR, this.apiKey);
       }
-      if (this.apiKMSKey !== undefined) {
-        lam.addEnvironment(apiKeyKMSEnvVar, this.apiKMSKey);
+      if (this.apiKmsKey !== undefined) {
+        lam.addEnvironment(KMS_API_KEY_ENV_VAR, this.apiKmsKey);
       }
     });
   }

@@ -7,7 +7,7 @@ const project = new AwsCdkConstructLibrary({
   author: "Datadog",
   authorOrganization: true,
   entrypoint: "lib/index.js",
-  repositoryUrl: "git@github.com:DataDog/datadog-cdk-constructs.git",
+  repositoryUrl: "https://github.com/DataDog/datadog-cdk-constructs",
 
   projectType: ProjectType.LIB,
   packageManager: NodePackageManager.YARN,
@@ -16,10 +16,22 @@ const project = new AwsCdkConstructLibrary({
   defaultReleaseBranch: "main",
   releaseEveryCommit: false,
   cdkDependenciesAsDeps: false,
-  cdkVersion: "1.71.0",
 
-  cdkDependencies: ["@aws-cdk/aws-lambda", "@aws-cdk/aws-logs", "@aws-cdk/aws-logs-destinations", "@aws-cdk/core"],
-  devDeps: ["ts-node", "aws-cdk", "prettier", "eslint-config-prettier", "eslint-plugin-prettier"],
+  publishToPypi: {
+    distName: "datadog-cdk-constructs",
+    module: "datadog_cdk_constructs",
+  },
+  cdkVersion: "1.95.1",
+  deps: ["loglevel"],
+  bundledDeps: ["loglevel"],
+  cdkDependencies: [
+    "@aws-cdk/aws-lambda",
+    "@aws-cdk/aws-logs",
+    "@aws-cdk/aws-logs-destinations",
+    "@aws-cdk/core",
+    "@aws-cdk/aws-apigateway",
+  ],
+  devDeps: ["ts-node", "prettier", "eslint-config-prettier", "eslint-plugin-prettier"],
   gitignore: [
     "*.js",
     "!jest.config.js",
@@ -29,6 +41,7 @@ const project = new AwsCdkConstructLibrary({
     "cdk.out/",
     ".parcel-cache",
     "test/__snapshots__",
+    ".DS_Store",
   ],
   npmignore: [
     "!LICENSE",
@@ -61,6 +74,8 @@ eslintConfig.addOverride("extends", [
 ]);
 
 eslintConfig.addOverride("rules", {
+  "@typescript-eslint/no-require-imports": "off",
+  "@typescript-eslint/no-var-requires": "off",
   "@typescript-eslint/no-explicit-any": "off",
   "@typescript-eslint/no-empty-interface": "off",
   "@typescript-eslint/explicit-module-boundary-types": "off",

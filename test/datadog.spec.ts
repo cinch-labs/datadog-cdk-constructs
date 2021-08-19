@@ -1,7 +1,9 @@
 import * as lambda from "@aws-cdk/aws-lambda";
+import { LogGroup } from "@aws-cdk/aws-logs";
 import * as cdk from "@aws-cdk/core";
 import "@aws-cdk/assert/jest";
-import { Datadog } from "../src/index";
+import { Datadog, addCdkConstructVersionTag } from "../src/index";
+const versionJson = require("../version.json");
 const EXTENSION_LAYER_VERSION = 5;
 const NODE_LAYER_VERSION = 1;
 
@@ -20,14 +22,14 @@ describe("validateProps", () => {
     });
     expect(() => {
       const datadogCDK = new Datadog(stack, "Datadog", {
-        forwarderARN: "forwarder-arn",
+        forwarderArn: "forwarder-arn",
         flushMetricsToLogs: false,
         site: "datadoghq.com",
         apiKey: "1234",
-        apiKMSKey: "5678",
+        apiKmsKey: "5678",
       });
       datadogCDK.addLambdaFunctions([hello]);
-    }).toThrowError("Both `apiKey` and `apiKMSKey` cannot be set.");
+    }).toThrowError("Both `apiKey` and `apiKmsKey` cannot be set.");
   });
 
   it("throws an error when the site is set to an invalid site URL", () => {
@@ -49,7 +51,7 @@ describe("validateProps", () => {
         nodeLayerVersion: NODE_LAYER_VERSION,
         extensionLayerVersion: EXTENSION_LAYER_VERSION,
         apiKey: "1234",
-        enableDDTracing: false,
+        enableDatadogTracing: false,
         flushMetricsToLogs: false,
         site: "dataDOGEhq.com",
       });
@@ -78,50 +80,15 @@ describe("validateProps", () => {
     });
     expect(() => {
       const datadogCDK = new Datadog(stack, "Datadog", {
-        forwarderARN: "forwarder-arn",
+        forwarderArn: "forwarder-arn",
         flushMetricsToLogs: false,
         site: "datadoghq.com",
       });
       datadogCDK.addLambdaFunctions([hello]);
-    }).toThrowError("When `flushMetricsToLogs` is false, `apiKey` or `apiKMSKey` must also be set.");
+    }).toThrowError("When `flushMetricsToLogs` is false, `apiKey` or `apiKmsKey` must also be set.");
   });
 
-  it("throws an error when the extensionLayerVersion and forwarderArn are set", () => {
-    const app = new cdk.App();
-    const stack = new cdk.Stack(app, "stack", {
-      env: {
-        region: "sa-east-1",
-      },
-    });
-    const hello = new lambda.Function(stack, "HelloHandler", {
-      runtime: lambda.Runtime.NODEJS_10_X,
-      code: lambda.Code.fromInline("test"),
-      handler: "hello.handler",
-    });
-
-    let threwError = false;
-    let thrownError: Error | undefined;
-    try {
-      const datadogCdk = new Datadog(stack, "Datadog", {
-        nodeLayerVersion: NODE_LAYER_VERSION,
-        extensionLayerVersion: EXTENSION_LAYER_VERSION,
-        forwarderARN: "forwarder",
-        apiKey: "1234",
-        addLayers: true,
-        enableDDTracing: false,
-        flushMetricsToLogs: true,
-        site: "datadoghq.com",
-      });
-      datadogCdk.addLambdaFunctions([hello]);
-    } catch (e) {
-      threwError = true;
-      thrownError = e;
-    }
-    expect(threwError).toBe(true);
-    expect(thrownError?.message).toEqual("`extensionLayerVersion` and `forwarderArn` cannot be set at the same time.");
-  });
-
-  it("throws an error when the `extensionLayerVersion` is set and neither the `apiKey` nor `apiKMSKey` is set", () => {
+  it("throws an error when the `extensionLayerVersion` is set and neither the `apiKey` nor `apiKmsKey` is set", () => {
     const app = new cdk.App();
     const stack = new cdk.Stack(app, "stack", {
       env: {
@@ -140,7 +107,7 @@ describe("validateProps", () => {
         nodeLayerVersion: NODE_LAYER_VERSION,
         extensionLayerVersion: EXTENSION_LAYER_VERSION,
         addLayers: true,
-        enableDDTracing: false,
+        enableDatadogTracing: false,
         flushMetricsToLogs: true,
         site: "datadoghq.com",
       });
@@ -150,6 +117,99 @@ describe("validateProps", () => {
       thrownError = e;
     }
     expect(threwError).toBe(true);
-    expect(thrownError?.message).toEqual("When `extensionLayer` is set, `apiKey` or `apiKMSKey` must also be set.");
+    expect(thrownError?.message).toEqual("When `extensionLayer` is set, `apiKey` or `apiKmsKey` must also be set.");
+  });
+});
+
+describe("addCdkConstructVersionTag", () => {
+  it("adds the dd_cdk_construct tag to all lambda function", () => {
+    const app = new cdk.App();
+    const stack = new cdk.Stack(app, "stack", {
+      env: {
+        region: "sa-east-1",
+      },
+    });
+    const hello1 = new lambda.Function(stack, "HelloHandler1", {
+      runtime: lambda.Runtime.NODEJS_10_X,
+      code: lambda.Code.fromInline("test"),
+      handler: "hello.handler",
+    });
+    const hello2 = new lambda.Function(stack, "HelloHandler2", {
+      runtime: lambda.Runtime.PYTHON_3_8,
+      code: lambda.Code.fromInline("test"),
+      handler: "hello.handler",
+    });
+    addCdkConstructVersionTag([hello1, hello2]);
+    expect(stack).toHaveResourceLike("AWS::Lambda::Function", {
+      Runtime: "nodejs10.x",
+      Tags: [
+        {
+          Key: "dd_cdk_construct",
+          Value: `v${versionJson.version}`,
+        },
+      ],
+    });
+    expect(stack).toHaveResourceLike("AWS::Lambda::Function", {
+      Runtime: "python3.8",
+      Tags: [
+        {
+          Key: "dd_cdk_construct",
+          Value: `v${versionJson.version}`,
+        },
+      ],
+    });
+  });
+  it("Does not call the addForwarder function when the extension is enabled", () => {
+    const app = new cdk.App();
+    const stack = new cdk.Stack(app, "stack", {
+      env: {
+        region: "sa-east-1",
+      },
+    });
+    const hello1 = new lambda.Function(stack, "HelloHandler1", {
+      runtime: lambda.Runtime.NODEJS_10_X,
+      code: lambda.Code.fromInline("test"),
+      handler: "hello.handler",
+    });
+
+    const datadogCdk = new Datadog(stack, "Datadog", {
+      nodeLayerVersion: NODE_LAYER_VERSION,
+      extensionLayerVersion: EXTENSION_LAYER_VERSION,
+      addLayers: true,
+      enableDatadogTracing: false,
+      flushMetricsToLogs: true,
+      site: "datadoghq.com",
+      forwarderArn: "forwarder-arn",
+      apiKey: "1234",
+    });
+
+    datadogCdk.addLambdaFunctions([hello1]);
+    expect(stack).not.toHaveResource("AWS::Logs::SubscriptionFilter");
+  });
+
+  it("Does call the addForwarderToNonLambdaLogGrpoups function when the extension is enabled", () => {
+    const app = new cdk.App();
+    const stack = new cdk.Stack(app, "stack", {
+      env: {
+        region: "sa-east-1",
+      },
+    });
+
+    const helloLogGroup = new LogGroup(stack, "helloLogGroup");
+
+    const datadogCdk = new Datadog(stack, "Datadog", {
+      nodeLayerVersion: NODE_LAYER_VERSION,
+      extensionLayerVersion: EXTENSION_LAYER_VERSION,
+      addLayers: true,
+      enableDatadogTracing: false,
+      flushMetricsToLogs: true,
+      site: "datadoghq.com",
+      forwarderArn: "forwarder-arn",
+      apiKey: "1234",
+    });
+
+    datadogCdk.addForwarderToNonLambdaLogGroups([helloLogGroup]);
+
+    expect(stack).toHaveResource("AWS::Logs::SubscriptionFilter");
   });
 });

@@ -8,18 +8,22 @@
 
 import * as crypto from "crypto";
 import * as lambda from "@aws-cdk/aws-lambda";
-import { FilterPattern } from "@aws-cdk/aws-logs";
-import { LambdaDestination } from "@aws-cdk/aws-logs-destinations";
+import { FilterPattern, ILogGroup } from "@aws-cdk/aws-logs";
 import * as cdk from "@aws-cdk/core";
-const SUBSCRIPTION_FILTER_PREFIX = "DatadogSubscriptionFilter";
+import log from "loglevel";
+export const SUBSCRIPTION_FILTER_PREFIX = "DatadogSubscriptionFilter";
+// Change back to 'import { LambdaDestination } from "@aws-cdk/aws-logs-destinations";'
+// once https://github.com/aws/aws-cdk/pull/14222 is merged and released.
+import { LambdaDestination } from "./lambdaDestination";
 
-function generateForwaderConstructId(forwarderArn: string) {
+function generateForwarderConstructId(forwarderArn: string) {
+  log.debug("Generating construct Id for Datadog Lambda Forwarder");
   return "forwarder" + crypto.createHash("sha256").update(forwarderArn).digest("hex");
 }
-function generateSubscriptionFilterName(functionArn: string, forwarderArn: string) {
+function generateSubscriptionFilterName(functionUniqueId: string, forwarderArn: string) {
   const subscriptionFilterValue: string = crypto
     .createHash("sha256")
-    .update(functionArn)
+    .update(functionUniqueId)
     .update(forwarderArn)
     .digest("hex");
   const subscriptionFilterValueLength = subscriptionFilterValue.length;
@@ -30,18 +34,34 @@ function generateSubscriptionFilterName(functionArn: string, forwarderArn: strin
   return subscriptionFilterName;
 }
 
-export function addForwarder(scope: cdk.Construct, lambdaFunctions: lambda.Function[], forwarderArn: string) {
-  const forwarderConstructId = generateForwaderConstructId(forwarderArn);
-  let forwarder;
+function getForwarder(scope: cdk.Construct, forwarderArn: string) {
+  const forwarderConstructId = generateForwarderConstructId(forwarderArn);
   if (scope.node.tryFindChild(forwarderConstructId)) {
-    forwarder = scope.node.tryFindChild(forwarderConstructId) as lambda.IFunction;
+    return scope.node.tryFindChild(forwarderConstructId) as lambda.IFunction;
   } else {
-    forwarder = lambda.Function.fromFunctionArn(scope, forwarderConstructId, forwarderArn);
+    return lambda.Function.fromFunctionArn(scope, forwarderConstructId, forwarderArn);
   }
+}
+
+export function addForwarder(scope: cdk.Construct, lambdaFunctions: lambda.Function[], forwarderArn: string) {
+  const forwarder = getForwarder(scope, forwarderArn);
   const forwarderDestination = new LambdaDestination(forwarder);
   lambdaFunctions.forEach((lam) => {
-    const subscriptionFilterName = generateSubscriptionFilterName(lam.functionArn, forwarderArn);
+    const subscriptionFilterName = generateSubscriptionFilterName(cdk.Names.uniqueId(lam), forwarderArn);
+    log.debug(`Adding log subscription ${subscriptionFilterName} for ${lam.functionName}`);
     lam.logGroup.addSubscriptionFilter(subscriptionFilterName, {
+      destination: forwarderDestination,
+      filterPattern: FilterPattern.allEvents(),
+    });
+  });
+}
+
+export function addForwarderToLogGroups(scope: cdk.Construct, logGroups: ILogGroup[], forwarderArn: string) {
+  const forwarder = getForwarder(scope, forwarderArn);
+  const forwarderDestination = new LambdaDestination(forwarder);
+  logGroups.forEach((group) => {
+    const subscriptionFilterName = generateSubscriptionFilterName(cdk.Names.nodeUniqueId(group.node), forwarderArn);
+    group.addSubscriptionFilter(subscriptionFilterName, {
       destination: forwarderDestination,
       filterPattern: FilterPattern.allEvents(),
     });
